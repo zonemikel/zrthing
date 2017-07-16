@@ -35,8 +35,18 @@ Not all of this is done or tested, I'm still largely working on this.
 search onshape for zrthingenclosure
 
 ### Applications
-Livestock/Pet door - TODO link
-Educational 
+#### Livestock/Pet door - TODO link
+- opens in the morning closes at night
+- based off time or lux
+- robust tested
+- easy to find parts
+
+#### Educational toy - TODO link
+- oled display
+- 4 buttons
+- motor control w buttons
+- snake
+- etch-a-oled with server upload
 
 ## More info webpage
 - note this is not up yet
