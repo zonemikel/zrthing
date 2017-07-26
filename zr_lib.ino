@@ -12,15 +12,12 @@ const int M2_A      = 14;  // motor2 A
 const int M2_B      = 15;  // motor2 B
 
 #include "Timer.h"
-const char* host = "dweet.io";
 // GPIO controls heat light
 // remember servo is 4 and blue is 5 (transposed!)
 #define lightgpio 4
 #define mtr1a 12
 #define mtr1b 13
 int light = 0;
-int eventid = 0;
-//Timer timer;
 char gpiostats[15]; // holds a char representing current gpio state
 String respJsonContent = "{\"Success\":\"gpio\"}";
 
@@ -54,22 +51,25 @@ String getTimeString(){
 
 // any needed startup
 void initZRLib(){
-  //wifi_setup(); // setup the wifi see webServer
+  Serial.begin(115200);
+  Serial.print("initZRLib\r\n");
+  
   pinMode(A0, INPUT);
-  //pinMode(lightgpio, OUTPUT);
+
   pinMode(M1_A, OUTPUT);
   pinMode(M1_B, OUTPUT);
   pinMode(M2_A, OUTPUT);
   pinMode(M2_B, OUTPUT);
-  //eventid = timer.every(14400000,rotateEggs);
+
+  zr_onewire_OneWireRead("DS18B20");
+  Serial.print(zr_onewire_getResponse());
+  wifi_setup(); // setup the wifi see webServer
   initUser();
 }
 
-
-
 // the main loop
 void loopZRLib(){
-  //wifiloop(); // handle all wifi stuff see webServer
+  wifiloop(); // handle all wifi stuff see webServer
   loopUser(); // handle what the user code wants
 }
 

@@ -9,20 +9,16 @@
 ////////////////////////////////////////////////////////
 #include "ExtLibs.h"
 
-String ZRVER="0.0.1e_door";
+String ZRVER="0.0.1";
 
 void setup() 
 {
-  Serial.begin(115200);
-  Serial.println();
-  Serial.println();
-  Serial.println("Startup \r\n zr_main"+ZRVER);
-  initUser();
+  initZRLib();
 }
 
 
 void loop() 
 {
-  loopUser();
+  loopZRLib();
 }
 

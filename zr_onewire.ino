@@ -1,8 +1,9 @@
-#define ONE_WIRE_BUS 2  // gpio2 with external header
+#define ONE_WIRE_BUS 5  // gpio5 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
 dht11 DHT11;
 String respOneWire = "{\"Success\":\"d1w\"}";
+float lastReadF;
 
 int readDHT11(){
     int chk = DHT11.read(ONE_WIRE_BUS);
@@ -86,8 +87,9 @@ int zr_onewire_OneWireRead(String driver){
     do {
       DS18B20.requestTemperatures(); 
       tempf = DS18B20.getTempFByIndex(0);
-      //Serial.print("TemperatureC: ");
-      //Serial.println(temp);
+      Serial.print("TemperatureF: ");
+      Serial.println(tempf);
+      lastReadF = tempf;
       tries--;
     } while (tempf == 85.0 || tempf == (-196.0) && tries > 0);
     respOneWire = "{\"TempF\":\""+String(tempf)+"\"}";

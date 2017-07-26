@@ -6,48 +6,93 @@
 #include <DallasTemperature.h>
 #include "TimeLib.h"
 #include "OneWire.h"
-#include "webStrings.h"
-
-
+#include "Timer.h"
  
 ESP8266WebServer server(80);
 #define DEBUG_ESP_HTTP_SERVER
-
 Servo espservo;
 
 // TODO: convert all responses to json, its human readable and better
 // TODO: check input
 
 const char* passphrase = "zonerobotics";
-String st;
+const char* host = "dweet.io";
 String content;
 char MyName[43];
 int statusCode;
-DNSServer dnsServer;
+
+// strings for ease
+String webString; // webpage for configure
+String st;        // list of AP scanned
+String ipStr;     // ip address
+String lipStr;    // local ip address
+
+// this is in zr_onewire, i was lazy
+extern float lastReadF;
+
+//DNSServer dnsServer;
+
+// timer 
+Timer timer;
+int eventid = 0;
 
 void wifiloop(){
   // all in the webserver 
   server.handleClient();
+  timer.update();
+}
+
+void sendDweet(){
+  //client.stop();
+  IPAddress ip = WiFi.localIP();
+  lipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
+  WiFiClient client;
+  if(client.connect(host, 80)){
+    // read d1w, this will update lastReadF
+    zr_d1w(4, "read", "DS18B20");
+    
+    Serial.println("connected");
+    // This will send the request to the server
+  client.print(String("GET /dweet/for/"+String(MyName)+"?temperature=") + String(lastReadF) + "&ip=" + lipStr + "&analog="+String(analogRead(A0))+" HTTP/1.1\r\n" +
+    "Host: " + host + "\r\n" + 
+    "Connection: close\r\n\r\n");
+
+  delay(10);
+  
+  // Read all the lines of the reply from server and print them to Serial
+  while(client.available()){
+    String line = client.readStringUntil('\r');
+    Serial.print(line);
+  }
+  
+  Serial.println();
+  Serial.println("closing connection");
+ 
+    // note the time that the connection was made:
+    //lastConnectionTime = millis();
+    
+  }else{
+    Serial.println("could not connect to dweet.io");
+  }
+  
 }
 
 void wifi_setup() {
-  Serial.begin(115200);
   EEPROM.begin(512);
   delay(10);
   Serial.println();
   Serial.println();
   getUniqueName();
   Serial.println("Startup \r\n Unique Name: "+String(MyName));
-
-  /* We dont do client mode, we will add this later 
+  
   // todo if certain gpio is set clear the eprom (factory reset)
   // todo move to own function in zrlib, we may have more reset stuff
-  pinMode(4, INPUT);
+  /*pinMode(4, INPUT);
   if(digitalRead(4)){
     Serial.println("clearing eeprom");
     for (int i = 0; i < 96; ++i) { EEPROM.write(i, 0); }
     EEPROM.commit();
-  }
+  }*/
   
   // read eeprom for ssid and pass
   Serial.println("Reading EEPROM ssid");
@@ -75,13 +120,15 @@ void wifi_setup() {
         WiFi.begin(esid.c_str(), epass.c_str());
         if (testWifi()) {
           launchWeb(0);
+          eventid = timer.every(1*60*1000,sendDweet);// every minute dweet out status
+          sendDweet();
           return;
         } 
     }
-  }else{ */
+  }else{ 
     Serial.print("No Stored Network");
     setupAP();
-  // }
+  }
 }
 
 bool testWifi(void) {
@@ -106,19 +153,19 @@ void launchWeb(int webtype) {
   Serial.print("SoftAP IP: ");
   Serial.println(WiFi.softAPIP());
   createWebServer(webtype);
+  initWebStrings();
   // Start the server
   server.begin();
   Serial.println("Server started"); 
 }
 
-void setupAP(void) {
-
-  /* no need to scan till we allow client mode
+void scanToList(void){
   WiFi.mode(WIFI_STA);
   //WiFi.disconnect();
   Serial.println("Debug 1");
   delay(100);
   int n = WiFi.scanNetworks();
+  st = "<select>";
   Serial.println("scan done");
   if (n == 0)
     Serial.println("no networks found");
@@ -140,24 +187,21 @@ void setupAP(void) {
      }
   }
   Serial.println(""); 
-  st = "<select name='SSID'>";
+  st = "<select name='ssid'>";
   for (int i = 0; i < n; ++i)
     {
       // Print SSID and RSSI for each network found
       st += "<option value="+WiFi.SSID(i)+">"+WiFi.SSID(i)+" ("+WiFi.RSSI(i)+")"+"</option>";
-      //st += WiFi.SSID(i);
-      //st += " (";
-      //st += WiFi.RSSI(i);
-      //st += ")";
-      //st += (WiFi.encryptionType(i) == ENC_TYPE_NONE)?" ":"*";
-      //st += "</li>";
     }
-  st += "</option>";
+  st += "</select>";
   delay(100);
-  
+}
 
+void setupAP(void) {
   WiFi.softAP(MyName, passphrase, 6);
-  */
+  Serial.println("softap: "+ String(MyName));
+  launchWeb(1);
+  /* dont work yet
   // captive portal 
   IPAddress ip(192, 168, 4, 1);
   IPAddress gateway(192, 168, 1, 1);
@@ -169,6 +213,7 @@ void setupAP(void) {
   Serial.println("softap: "+ String(MyName));
   launchWeb(1);
   Serial.println("over");
+  */
 }
 
 void getUniqueName(){
@@ -306,29 +351,7 @@ void createWebServer(int webtype)
   // if they need to connect to wifi 
   if ( webtype == 1 ) { // cant connect to user wifi, default, or no settings stored in eeprom
     server.on("/", []() {
-        IPAddress ip = WiFi.softAPIP();
-        String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-        content = "<!DOCTYPE HTML>\r\n<html>";
-        // general infos 
-        content += "<h3>Your ZRThing</h3>";
-        content += "ZRThing ID: "+String(MyName)+ " (Write that down!)<br> ";
-        content += "Current Ip: "+ ipStr;
-        content += "<br>Time: " + String(hour()) +":"+ String(minute()) +":"+ String(second()) +" "+ String(day()) +"/"+ String(month()) +"/"+ String(year());
-        // connect to exising wifi 
-        content += "<h3>Connect to your wifi</h3><form method='get' action='setting'>";
-        content += st; // drop down option of wifi's found
-        // todo add gateway and ip so user can specify
-        content += "<br><label>PASS: </label><input name='pass' length=64><input type='submit'><br></form>";
-        // local functions 
-        content += "<h3>ID your ZRThing</h3>";
-        content += "<form method='get' action='id'><input type='submit' value='ID'><br></form>";
-        // in webstrings.h
-        content += setTimeJS;
-        content += setTimeHTML;
-        // in webstrings.h
-        content += petDoorHTML;
-        content += "</html>";
-        server.send(200, "text/html", content);  
+        server.send(200, "text/html", webString);  
     });
     //server.on("/req", []() {
     //    content = "<!DOCTYPE HTML>\r\n<html>RESP ";
@@ -365,7 +388,7 @@ void createWebServer(int webtype)
           content = "{\"Success\":\"saved to eeprom... reset to boot into new wifi\"}";
           statusCode = 200;
         } else {
-          content = "{\"Error\":\"404 not found\"}";
+          content = "{\"Error\":\"404 not found\"}"; // this is bad error, it just means ssid not in args etc
           statusCode = 404;
           Serial.println("Sending 404");
         }
@@ -373,12 +396,7 @@ void createWebServer(int webtype)
     });
   } else if (webtype == 0) { // connected to user router
     server.on("/", []() {
-      IPAddress ip = WiFi.localIP();
-      String ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
-      content = "<!DOCTYPE HTML>\r\n<html>";
-      content += "Connected to your wifi ! Your ip (on your network) is " + ipStr;
-      content += "<br>Click below to reset to default<form method='get' action='cleareeprom'><input type='submit' value='reset'></form>";
-      server.send(200, "text/html", content);
+      server.send(200, "text/html", webString);
     });
     server.on("/cleareeprom", []() {
       content = "<!DOCTYPE HTML>\r\n<html>";
@@ -390,4 +408,73 @@ void createWebServer(int webtype)
     });
   }
 }
+
+void initWebStrings(void){
+  IPAddress ip = WiFi.softAPIP();
+  ipStr = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
+  scanToList();
+
+  webString = "<!DOCTYPE HTML>"
+  "<html><head><style>"
+  "a.button {"
+  "-webkit-appearance: button;"
+  "-moz-appearance: button;"
+  "appearance: button;"
+  "text-decoration: none;"
+  "color: initial;"
+  "padding: 15px 32px;"
+  "margin: 4px 8px;"
+  "}"
+  "</style><script type=\"text/javascript\">"
+  "var now = new Date(); "
+  "var dtField = document.getElementById('newtime');"
+  "dtField= now.getTime() - now.getTimezoneOffset() * 60000;"
+  "console.log('time'+dtField); "
+  "</script></head><body>"
+  "<h3>Your ZRThing</h3>"
+  "ZRThing ID: "+String(MyName)+"<br>"\
+  "Current Ip: "+ipStr+""\
+  "<br>Time: "+ String(hour()) +":"+ String(minute()) +":"+ String(second()) +" "+ String(day()) +"/"+ String(month()) +"/"+ String(year())+""\
+  "<h3>Connect to a wifi AP</h3><form method='get' action='setting'>Access Point<br>"+st+""\
+  "<br>"
+  "<label>AP Password: </label>"
+  "<br>"
+  "<input name='pass' length=64>"
+  "<br><input type='submit'></form>"
+  "<!--"
+  "<h3>Pet Door</h3>"
+  "<form method='get' action='settingpetdoor'>"
+  "<label>Open Time: </label><input type='time' name='opentime' length=4><br>"
+  "<label>Close Time: </label><input type='time'name='closetime' length=4><br>"
+  "<label>Up Seconds: </label><input name='upsec' length=4><br>"
+  "<label>Down Seconds: </label><input name='downsec' length=4><br>"
+  "<br><input name='pass' length=4>"
+  "<input type='submit'><br>"
+  "</form>"
+  "-->"
+  "<h3>Set Time</h3>"
+  "<form method='get' action='settime'>"
+  "<label id='clienttimelabel'>Client Time</label><br>"
+  "<input type='datetime-local' id='newtime' name='newtime' length=32 >"
+  "<br><input type='submit'><br>"
+  "</form>"
+  "<h3>RGB LED</h3>"
+  "<br>Blue "
+  "<a href=\"/gpio?pin=0&cmd=0\" class=\"button\">ON</a>"
+  "<a href=\"/gpio?pin=0&cmd=1\" class=\"button\">OFF</a>"
+  "<br>Green "
+  "<a href=\"/gpio?pin=2&cmd=0\" class=\"button\">ON</a>"
+  "<a href=\"/gpio?pin=2&cmd=1\" class=\"button\">OFF</a>"
+  "<br>Red "
+  "<a href=\"/gpio?pin=16&cmd=0\" class=\"button\">ON</a>"
+  "<a href=\"/gpio?pin=16&cmd=1\" class=\"button\">OFF</a>"
+  "<h3>Dweet.io</h3>"
+  "<i> If connected to a AP your device will broadcast online here </i><br>"
+  "<a href=\"https://dweet.io:443/get/dweets/for/"+String(MyName)+"\">https://dweet.io:443/get/dweets/for/"+String(MyName)+"</a>"\
+  "<h3>Clear all settings</h3>"
+  "<br>Click below to reset to default<form method='get' action='cleareeprom'><input type='submit' value='reset'></form>"
+  "</body></html>";
+}
+
+
 
